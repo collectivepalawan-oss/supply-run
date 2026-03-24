@@ -23,6 +23,16 @@ const generateId = () => {
   });
 };
 
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
 const loadProfileFromStorage = () => {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_PROFILE);
@@ -36,19 +46,32 @@ const saveProfileToStorage = (profile) => {
   localStorage.setItem(STORAGE_KEY_PROFILE, JSON.stringify(profile));
 };
 
+const createAnonymousProfile = () => {
+  const profile = {
+    id: generateId(),
+    full_name: '',
+    whatsapp_number: '',
+    location_barangay: 'San Vicente',
+    user_type: 'both',
+    is_admin: false,
+    created_at: new Date().toISOString()
+  };
+  saveProfileToStorage(profile);
+  return profile;
+};
+
 const init = async () => {
   const isAuthed = sessionStorage.getItem(STORAGE_KEY_AUTH);
 
   if (isAuthed) {
-    const profile = loadProfileFromStorage();
-    if (profile) {
-      currentProfile = profile;
-      currentUser = { id: profile.id };
-      showMainApp();
-      await loadHomeData();
-    } else {
-      showProfileSetupScreen();
+    let profile = loadProfileFromStorage();
+    if (!profile) {
+      profile = createAnonymousProfile();
     }
+    currentProfile = profile;
+    currentUser = { id: profile.id };
+    showMainApp();
+    await loadHomeData();
   } else {
     showPasscodeScreen();
   }
@@ -64,14 +87,6 @@ const hideLoading = () => {
 const showPasscodeScreen = () => {
   document.getElementById('auth-screen').classList.remove('hidden');
   document.getElementById('passcode-screen').classList.remove('hidden');
-  document.getElementById('profile-setup-screen').classList.add('hidden');
-  document.getElementById('main-app').classList.add('hidden');
-};
-
-const showProfileSetupScreen = () => {
-  document.getElementById('auth-screen').classList.remove('hidden');
-  document.getElementById('passcode-screen').classList.add('hidden');
-  document.getElementById('profile-setup-screen').classList.remove('hidden');
   document.getElementById('main-app').classList.add('hidden');
 };
 
@@ -86,70 +101,28 @@ const handlePasscodeSubmit = () => {
 
   if (code === PASSCODE) {
     sessionStorage.setItem(STORAGE_KEY_AUTH, '1');
-    const profile = loadProfileFromStorage();
-    if (profile) {
-      currentProfile = profile;
-      currentUser = { id: profile.id };
-      showMainApp();
-      loadHomeData();
-    } else {
-      showProfileSetupScreen();
+    let profile = loadProfileFromStorage();
+    if (!profile) {
+      profile = createAnonymousProfile();
     }
+    currentProfile = profile;
+    currentUser = { id: profile.id };
+    showMainApp();
+    loadHomeData();
   } else {
     showToast('Incorrect passcode', 'error');
     input.value = '';
   }
 };
 
-const handleProfileSetup = async () => {
-  const name = document.getElementById('setup-name').value.trim();
-  const whatsapp = document.getElementById('setup-whatsapp').value.trim();
-  const barangay = document.getElementById('setup-barangay').value.trim();
-
-  if (!name || !whatsapp) {
-    showToast('Name and WhatsApp number are required', 'error');
-    return;
-  }
-
-  const profile = {
-    id: generateId(),
-    full_name: name,
-    whatsapp_number: whatsapp,
-    location_barangay: barangay || 'San Vicente',
-    user_type: 'both',
-    is_admin: false,
-    created_at: new Date().toISOString()
-  };
-
-  saveProfileToStorage(profile);
-  currentProfile = profile;
-  currentUser = { id: profile.id };
-
-  supabase.from('profiles').insert({
-    id: profile.id,
-    full_name: profile.full_name,
-    whatsapp_number: profile.whatsapp_number,
-    location_barangay: profile.location_barangay,
-    user_type: profile.user_type
-  }).then(({ error }) => {
-    if (error) console.warn('Profile sync to DB failed:', error.message);
-  });
-
-  showMainApp();
-  await loadHomeData();
-  showToast('Welcome, ' + name + '!', 'success');
-};
-
 const setupEventListeners = () => {
   const passcodeBtn = document.getElementById('passcode-btn');
   const passcodeInput = document.getElementById('passcode-input');
-  const setupBtn = document.getElementById('setup-profile-btn');
 
   passcodeBtn?.addEventListener('click', handlePasscodeSubmit);
   passcodeInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handlePasscodeSubmit();
   });
-  setupBtn?.addEventListener('click', handleProfileSetup);
 
   document.addEventListener('click', (e) => {
     const navItem = e.target.closest('.nav-item');
@@ -606,15 +579,15 @@ const loadProfile = async () => {
       <div class="profile-info">
         <div class="info-row">
           <span class="info-label">Name</span>
-          <span class="info-value">${currentProfile.full_name}</span>
+          <span class="info-value">${currentProfile.full_name ? escapeHtml(currentProfile.full_name) : '<em style="color:var(--text-tertiary)">Not set</em>'}</span>
         </div>
         <div class="info-row">
           <span class="info-label">WhatsApp</span>
-          <span class="info-value">${currentProfile.whatsapp_number}</span>
+          <span class="info-value">${currentProfile.whatsapp_number ? escapeHtml(currentProfile.whatsapp_number) : '<em style="color:var(--text-tertiary)">Not set</em>'}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Location</span>
-          <span class="info-value">${currentProfile.location_barangay}</span>
+          <span class="info-value">${escapeHtml(currentProfile.location_barangay) || 'San Vicente'}</span>
         </div>
       </div>
       <button class="btn-secondary" onclick="showEditProfileModal()" style="margin-top:16px;">
@@ -952,12 +925,19 @@ window.requestPayout = async () => {
     .maybeSingle();
 
   if (responder && responder.pending_earnings > 0) {
+    const gcash = currentProfile.whatsapp_number;
+    if (!gcash) {
+      showToast('Please set your WhatsApp/GCash number in your profile first', 'error');
+      showEditProfileModal();
+      return;
+    }
+
     const { error } = await supabase
       .from('payouts')
       .insert({
         responder_id: responder.id,
         amount: responder.pending_earnings,
-        gcash_number: currentProfile.whatsapp_number
+        gcash_number: gcash
       });
 
     if (error) {
@@ -996,16 +976,16 @@ const showToast = (message, type = 'info') => {
 window.showEditProfileModal = () => {
   createModal('Edit Profile', `
     <div class="form-group">
-      <label>Name *</label>
-      <input type="text" id="edit-name" value="${currentProfile.full_name}" required />
+      <label>Name</label>
+      <input type="text" id="edit-name" value="${escapeHtml(currentProfile.full_name || '')}" placeholder="Your name (optional)" />
     </div>
     <div class="form-group">
-      <label>WhatsApp *</label>
-      <input type="tel" id="edit-whatsapp" value="${currentProfile.whatsapp_number}" pattern="639[0-9]{9}" required />
+      <label>WhatsApp</label>
+      <input type="tel" id="edit-whatsapp" value="${escapeHtml(currentProfile.whatsapp_number || '')}" pattern="639[0-9]{9}" placeholder="639XXXXXXXXX (optional)" />
     </div>
     <div class="form-group">
       <label>Barangay</label>
-      <input type="text" id="edit-barangay" value="${currentProfile.location_barangay}" />
+      <input type="text" id="edit-barangay" value="${escapeHtml(currentProfile.location_barangay || '')}" />
     </div>
     <div class="form-actions">
       <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -1018,11 +998,6 @@ window.saveEditProfile = () => {
   const name = document.getElementById('edit-name').value.trim();
   const whatsapp = document.getElementById('edit-whatsapp').value.trim();
   const barangay = document.getElementById('edit-barangay').value.trim();
-
-  if (!name || !whatsapp) {
-    showToast('Name and WhatsApp are required', 'error');
-    return;
-  }
 
   currentProfile = {
     ...currentProfile,
