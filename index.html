@@ -36,45 +36,45 @@
 
       <!-- Auth Screens -->
       <div id="auth-screen" class="screen hidden">
-        <div class="auth-container">
+
+        <!-- Passcode Screen -->
+        <div id="passcode-screen" class="auth-container">
           <div class="auth-header">
             <i class="fas fa-truck-fast"></i>
             <h1>Palawan Supply Run</h1>
             <p>Connecting San Vicente with Puerto Princesa</p>
           </div>
-
-          <div class="auth-tabs">
-            <button class="auth-tab active" data-tab="login">Login</button>
-            <button class="auth-tab" data-tab="register">Register</button>
-          </div>
-
-          <div id="login-form" class="auth-form">
-            <input type="email" id="login-email" placeholder="Email" required />
-            <input type="password" id="login-password" placeholder="Password" required />
-            <button id="login-btn" class="btn-primary">
-              <i class="fas fa-sign-in-alt"></i> Login
-            </button>
-          </div>
-
-          <div id="register-form" class="auth-form hidden">
-            <input type="text" id="reg-fullname" placeholder="Full Name" required />
-            <input type="email" id="reg-email" placeholder="Email" required />
-            <input type="password" id="reg-password" placeholder="Password (min 6 chars)" required />
-            <input type="tel" id="reg-whatsapp" placeholder="WhatsApp (639XXXXXXXXX)" pattern="639[0-9]{9}" required />
-            <input type="tel" id="reg-gcash" placeholder="GCash Number (optional)" />
-            <input type="text" id="reg-barangay" placeholder="Barangay/Sitio in San Vicente" required />
-            <input type="text" id="reg-landmark" placeholder="Landmark (e.g., Near church)" />
-            <select id="reg-usertype" required>
-              <option value="">Select User Type</option>
-              <option value="requester">Requester (I need items)</option>
-              <option value="responder">Responder (I deliver)</option>
-              <option value="both">Both</option>
-            </select>
-            <button id="register-btn" class="btn-primary">
-              <i class="fas fa-user-plus"></i> Create Account
+          <div class="auth-form">
+            <p style="text-align:center; margin-bottom:16px; color:var(--text-secondary); font-size:14px;">
+              Enter the community passcode to continue
+            </p>
+            <input type="text" id="passcode-input" placeholder="Passcode" maxlength="4" inputmode="numeric" autocomplete="off" />
+            <button id="passcode-btn" class="btn-primary">
+              <i class="fas fa-unlock-alt"></i> Enter
             </button>
           </div>
         </div>
+
+        <!-- Profile Setup Screen -->
+        <div id="profile-setup-screen" class="auth-container hidden">
+          <div class="auth-header">
+            <i class="fas fa-user-circle"></i>
+            <h1>Quick Setup</h1>
+            <p>Tell us a bit about yourself</p>
+          </div>
+          <div class="auth-form">
+            <p style="text-align:center; margin-bottom:16px; color:var(--text-secondary); font-size:14px;">
+              This is stored on your device only
+            </p>
+            <input type="text" id="setup-name" placeholder="Your Name *" required />
+            <input type="tel" id="setup-whatsapp" placeholder="WhatsApp (639XXXXXXXXX) *" pattern="639[0-9]{9}" required />
+            <input type="text" id="setup-barangay" placeholder="Barangay in San Vicente (optional)" />
+            <button id="setup-profile-btn" class="btn-primary">
+              <i class="fas fa-check"></i> Save &amp; Continue
+            </button>
+          </div>
+        </div>
+
       </div>
 
       <!-- Main App -->
