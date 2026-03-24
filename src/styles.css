@@ -361,6 +361,12 @@ body {
   color: var(--accent-blue);
 }
 
+.btn-icon.active {
+  background: var(--gradient-primary);
+  border-color: transparent;
+  color: white;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -654,6 +660,18 @@ body {
 .card-btn-whatsapp:hover {
   background: #25d366;
   color: white;
+}
+
+.card-btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.card-btn-danger:hover {
+  background: #ef4444;
+  color: white;
+  border-color: transparent;
 }
 
 .map-container {
