@@ -744,6 +744,15 @@ const logAdminAction = async (action, targetId, details) => {
   });
 };
 
+// Escapes a value for safe use inside an HTML double-quoted attribute that
+// wraps a JS string literal delimited by single quotes, e.g.:
+//   onclick="fn('${escapeAttr(val)}')"
+const escapeAttr = (val) =>
+  String(val == null ? '' : val)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;');
+
 let currentAdminTab = 'overview';
 
 const loadAdminDashboard = () => {
@@ -859,7 +868,7 @@ const loadAdminOverview = async () => {
         </div>
         <div class="admin-stat-card">
           <i class="fas fa-money-bill-wave" style="color:var(--accent-green)"></i>
-          <div><h3>₱${monthlyRevenue.toLocaleString()}</h3><p>Monthly Revenue (proj.)</p></div>
+          <div><h3>₱${monthlyRevenue.toLocaleString()}</h3><p>Monthly Revenue (projected)</p></div>
         </div>
         <div class="admin-stat-card">
           <i class="fas fa-clock" style="color:var(--accent-red)"></i>
@@ -1024,7 +1033,7 @@ const renderAdminRequestsRows = (requests) => {
       <td>${getTerminalName(req.terminal)}</td>
       <td>${new Date(req.created_at).toLocaleDateString('en-PH')}</td>
       <td class="admin-actions-cell">
-        <button class="admin-btn admin-btn-sm" onclick="adminEditRequest('${req.id}','${(req.item_name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${req.status}','${req.urgency}')"><i class="fas fa-edit"></i></button>
+        <button class="admin-btn admin-btn-sm" onclick="adminEditRequest('${req.id}','${escapeAttr(req.item_name)}','${req.status}','${req.urgency}')"><i class="fas fa-edit"></i></button>
         <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteRequest('${req.id}')"><i class="fas fa-trash"></i></button>
       </td>
     </tr>
@@ -1188,7 +1197,7 @@ const renderAdminStoresRows = (stores) => {
       </td>
       <td class="admin-actions-cell">
         <button class="admin-btn admin-btn-sm" onclick="adminEditStore('${store.id}')"><i class="fas fa-edit"></i></button>
-        <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteStore('${store.id}','${(store.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
+        <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteStore('${store.id}','${escapeAttr(store.name)}')"><i class="fas fa-trash"></i></button>
       </td>
     </tr>
   `).join('');
@@ -1426,7 +1435,7 @@ const renderAdminRespondersRows = (responders) => {
           ${!resp.verified && resp.rejection_reason ? `
             <button class="admin-btn admin-btn-sm admin-btn-success" onclick="adminApproveResponder('${resp.id}')"><i class="fas fa-check"></i> Reactivate</button>
           ` : ''}
-          <button class="admin-btn admin-btn-sm" onclick="adminEditResponder('${resp.id}','${(resp.profile?.full_name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${resp.total_earnings || 0}')"><i class="fas fa-edit"></i></button>
+          <button class="admin-btn admin-btn-sm" onclick="adminEditResponder('${resp.id}','${escapeAttr(resp.profile?.full_name)}','${resp.total_earnings || 0}')"><i class="fas fa-edit"></i></button>
         </td>
       </tr>
     `;
@@ -1580,8 +1589,8 @@ const renderAdminUsersRows = (users) => {
       <td>${user.user_type}</td>
       <td>${new Date(user.created_at).toLocaleDateString('en-PH')}</td>
       <td class="admin-actions-cell">
-        <button class="admin-btn admin-btn-sm" onclick="adminEditUser('${user.id}','${(user.full_name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}','${user.whatsapp_number || ''}','${user.location_barangay || ''}')"><i class="fas fa-edit"></i></button>
-        ${user.id !== currentProfile?.id ? `<button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteUser('${user.id}','${(user.full_name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>` : ''}
+        <button class="admin-btn admin-btn-sm" onclick="adminEditUser('${user.id}','${escapeAttr(user.full_name)}','${escapeAttr(user.whatsapp_number)}','${escapeAttr(user.location_barangay)}')"><i class="fas fa-edit"></i></button>
+        ${user.id !== currentProfile?.id ? `<button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteUser('${user.id}','${escapeAttr(user.full_name)}')"><i class="fas fa-trash"></i></button>` : ''}
       </td>
     </tr>
   `).join('');
@@ -1944,9 +1953,9 @@ window.adminConfirmReset = async () => {
   const confirm = document.getElementById('admin-reset-confirm').value;
   if (confirm !== 'RESET') { showToast('Type RESET to confirm', 'error'); return; }
   await Promise.all([
-    supabase.from('ratings').delete().lte('created_at', new Date().toISOString()),
-    supabase.from('payouts').delete().lte('created_at', new Date().toISOString()),
-    supabase.from('requests').delete().lte('created_at', new Date().toISOString())
+    supabase.from('ratings').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+    supabase.from('payouts').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+    supabase.from('requests').delete().neq('id', '00000000-0000-0000-0000-000000000000')
   ]);
   await logAdminAction('reset_app_data', null, 'All requests, ratings, and payouts deleted');
   closeModal();
@@ -2025,7 +2034,7 @@ const loadAdminTerminals = async () => {
                 <td>${t.whatsapp_number || '—'}</td>
                 <td class="admin-actions-cell">
                   <button class="admin-btn admin-btn-sm" onclick="adminEditStore('${t.id}')"><i class="fas fa-edit"></i></button>
-                  <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteStore('${t.id}','${(t.name || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"><i class="fas fa-trash"></i></button>
+                  <button class="admin-btn admin-btn-sm admin-btn-danger" onclick="adminDeleteStore('${t.id}','${escapeAttr(t.name)}')"><i class="fas fa-trash"></i></button>
                 </td>
               </tr>
             `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary)">No terminal stores in database. Add one below.</td></tr>'}
