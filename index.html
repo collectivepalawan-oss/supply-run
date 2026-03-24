@@ -101,6 +101,10 @@
             <i class="fas fa-user"></i>
             <span>Profile</span>
           </button>
+          <button class="nav-item admin-nav-btn hidden" data-view="admin">
+            <i class="fas fa-shield-halved"></i>
+            <span>Admin</span>
+          </button>
         </nav>
 
         <!-- Views Container -->
@@ -269,14 +273,22 @@
           <!-- Admin View (conditional) -->
           <div id="admin-view" class="view">
             <div class="view-header">
-              <h1><i class="fas fa-shield-halved"></i> Admin Dashboard</h1>
+              <h1><i class="fas fa-shield-halved"></i> Admin Panel</h1>
             </div>
 
-            <div class="admin-tabs">
-              <button class="admin-tab active" data-admin-tab="overview">Overview</button>
-              <button class="admin-tab" data-admin-tab="responders">Verify Responders</button>
-              <button class="admin-tab" data-admin-tab="payouts">Payouts</button>
-              <button class="admin-tab" data-admin-tab="stores">Manage Stores</button>
+            <div class="admin-tabs-wrap">
+              <div class="admin-tabs">
+                <button class="admin-tab active" data-admin-tab="overview"><i class="fas fa-chart-pie"></i> Overview</button>
+                <button class="admin-tab" data-admin-tab="requests"><i class="fas fa-box"></i> Requests</button>
+                <button class="admin-tab" data-admin-tab="stores"><i class="fas fa-store"></i> Stores</button>
+                <button class="admin-tab" data-admin-tab="responders"><i class="fas fa-truck"></i> Responders</button>
+                <button class="admin-tab" data-admin-tab="users"><i class="fas fa-users"></i> Users</button>
+                <button class="admin-tab" data-admin-tab="ratings"><i class="fas fa-star"></i> Ratings</button>
+                <button class="admin-tab" data-admin-tab="payouts"><i class="fas fa-money-bill-wave"></i> Payouts</button>
+                <button class="admin-tab" data-admin-tab="settings"><i class="fas fa-cog"></i> Settings</button>
+                <button class="admin-tab" data-admin-tab="terminals"><i class="fas fa-bus"></i> Terminals</button>
+                <button class="admin-tab" data-admin-tab="logs"><i class="fas fa-history"></i> Logs</button>
+              </div>
             </div>
 
             <div id="admin-content"></div>
