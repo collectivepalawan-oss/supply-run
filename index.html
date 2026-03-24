@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0a0a0f" />
+    <meta name="description" content="Palawan Supply Run - Community logistics platform connecting San Vicente with Puerto Princesa" />
+
+    <title>Palawan Supply Run</title>
+
+    <meta property="og:title" content="Palawan Supply Run" />
+    <meta property="og:description" content="Community logistics platform connecting San Vicente with Puerto Princesa" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Loading Screen -->
+      <div id="loading-screen" class="loading-screen">
+        <div class="loading-content">
+          <div class="loading-logo">
+            <i class="fas fa-truck-fast"></i>
+          </div>
+          <h2>Palawan Supply Run</h2>
+          <div class="loading-spinner"></div>
+        </div>
+      </div>
+
+      <!-- Auth Screens -->
+      <div id="auth-screen" class="screen hidden">
+        <div class="auth-container">
+          <div class="auth-header">
+            <i class="fas fa-truck-fast"></i>
+            <h1>Palawan Supply Run</h1>
+            <p>Connecting San Vicente with Puerto Princesa</p>
+          </div>
+
+          <div class="auth-tabs">
+            <button class="auth-tab active" data-tab="login">Login</button>
+            <button class="auth-tab" data-tab="register">Register</button>
+          </div>
+
+          <div id="login-form" class="auth-form">
+            <input type="email" id="login-email" placeholder="Email" required />
+            <input type="password" id="login-password" placeholder="Password" required />
+            <button id="login-btn" class="btn-primary">
+              <i class="fas fa-sign-in-alt"></i> Login
+            </button>
+          </div>
+
+          <div id="register-form" class="auth-form hidden">
+            <input type="text" id="reg-fullname" placeholder="Full Name" required />
+            <input type="email" id="reg-email" placeholder="Email" required />
+            <input type="password" id="reg-password" placeholder="Password (min 6 chars)" required />
+            <input type="tel" id="reg-whatsapp" placeholder="WhatsApp (639XXXXXXXXX)" pattern="639[0-9]{9}" required />
+            <input type="tel" id="reg-gcash" placeholder="GCash Number (optional)" />
+            <input type="text" id="reg-barangay" placeholder="Barangay/Sitio in San Vicente" required />
+            <input type="text" id="reg-landmark" placeholder="Landmark (e.g., Near church)" />
+            <select id="reg-usertype" required>
+              <option value="">Select User Type</option>
+              <option value="requester">Requester (I need items)</option>
+              <option value="responder">Responder (I deliver)</option>
+              <option value="both">Both</option>
+            </select>
+            <button id="register-btn" class="btn-primary">
+              <i class="fas fa-user-plus"></i> Create Account
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main App -->
+      <div id="main-app" class="hidden">
+        <!-- Mobile Bottom Navigation -->
+        <nav class="bottom-nav">
+          <button class="nav-item active" data-view="home">
+            <i class="fas fa-home"></i>
+            <span>Home</span>
+          </button>
+          <button class="nav-item" data-view="requests">
+            <i class="fas fa-box"></i>
+            <span>Requests</span>
+          </button>
+          <button class="nav-item" data-view="stores">
+            <i class="fas fa-store"></i>
+            <span>Stores</span>
+          </button>
+          <button class="nav-item" data-view="responders">
+            <i class="fas fa-truck"></i>
+            <span>Responders</span>
+          </button>
+          <button class="nav-item" data-view="profile">
+            <i class="fas fa-user"></i>
+            <span>Profile</span>
+          </button>
+        </nav>
+
+        <!-- Views Container -->
+        <div class="views-container">
+          <!-- Home View -->
+          <div id="home-view" class="view active">
+            <div class="view-header">
+              <h1><i class="fas fa-truck-fast"></i> Palawan Supply Run</h1>
+              <p class="tagline">San Vicente ↔ Puerto Princesa</p>
+            </div>
+
+            <div class="stats-grid">
+              <div class="stat-card">
+                <i class="fas fa-box-open"></i>
+                <div class="stat-content">
+                  <h3 id="stat-open-requests">0</h3>
+                  <p>Open Requests</p>
+                </div>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-truck-loading"></i>
+                <div class="stat-content">
+                  <h3 id="stat-active-deliveries">0</h3>
+                  <p>Active Deliveries</p>
+                </div>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-users"></i>
+                <div class="stat-content">
+                  <h3 id="stat-responders">0</h3>
+                  <p>Active Responders</p>
+                </div>
+              </div>
+              <div class="stat-card">
+                <i class="fas fa-store"></i>
+                <div class="stat-content">
+                  <h3 id="stat-stores">0</h3>
+                  <p>Partner Stores</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="quick-actions">
+              <h2>Quick Actions</h2>
+              <div class="action-buttons">
+                <button class="action-btn" id="post-request-btn">
+                  <i class="fas fa-plus-circle"></i>
+                  <span>Post Request</span>
+                </button>
+                <button class="action-btn" id="browse-requests-btn">
+                  <i class="fas fa-search"></i>
+                  <span>Browse Requests</span>
+                </button>
+                <button class="action-btn" id="become-responder-btn">
+                  <i class="fas fa-truck"></i>
+                  <span>Become Responder</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="recent-section">
+              <h2>Recent Requests</h2>
+              <div id="recent-requests" class="requests-list"></div>
+            </div>
+          </div>
+
+          <!-- Requests View -->
+          <div id="requests-view" class="view">
+            <div class="view-header">
+              <h1><i class="fas fa-box"></i> Requests</h1>
+              <button class="btn-icon" id="new-request-btn">
+                <i class="fas fa-plus"></i>
+              </button>
+            </div>
+
+            <div class="filter-bar">
+              <select id="filter-status">
+                <option value="all">All Status</option>
+                <option value="open">Open</option>
+                <option value="claimed">Claimed</option>
+                <option value="at_terminal">At Terminal</option>
+                <option value="en_route">En Route</option>
+                <option value="arrived">Arrived</option>
+              </select>
+              <select id="filter-urgency">
+                <option value="all">All Urgency</option>
+                <option value="urgent">Urgent</option>
+                <option value="normal">Normal</option>
+                <option value="flexible">Flexible</option>
+              </select>
+            </div>
+
+            <div id="requests-list" class="requests-list"></div>
+          </div>
+
+          <!-- Stores View -->
+          <div id="stores-view" class="view">
+            <div class="view-header">
+              <h1><i class="fas fa-store"></i> Store Directory</h1>
+            </div>
+
+            <div class="filter-bar">
+              <input type="text" id="store-search" placeholder="Search stores..." />
+              <select id="filter-store-type">
+                <option value="all">All Types</option>
+                <option value="mall">Malls</option>
+                <option value="hardware">Hardware</option>
+                <option value="specialty">Specialty</option>
+                <option value="terminal">Terminals</option>
+                <option value="grocery">Grocery</option>
+                <option value="pharmacy">Pharmacy</option>
+                <option value="bank">Banks</option>
+              </select>
+            </div>
+
+            <div class="view-toggle">
+              <button class="toggle-btn active" data-toggle="list">
+                <i class="fas fa-list"></i> List
+              </button>
+              <button class="toggle-btn" data-toggle="map">
+                <i class="fas fa-map"></i> Map
+              </button>
+            </div>
+
+            <div id="stores-list" class="stores-list"></div>
+            <div id="stores-map" class="map-container hidden"></div>
+          </div>
+
+          <!-- Responders View -->
+          <div id="responders-view" class="view">
+            <div class="view-header">
+              <h1><i class="fas fa-truck"></i> Responders</h1>
+            </div>
+
+            <div class="filter-bar">
+              <select id="filter-vehicle">
+                <option value="all">All Vehicles</option>
+                <option value="motor">Motor</option>
+                <option value="van">Van</option>
+                <option value="truck">6-Wheeler Truck</option>
+                <option value="wing_van">Wing Van</option>
+              </select>
+              <select id="filter-rating">
+                <option value="all">All Ratings</option>
+                <option value="5">5 Stars</option>
+                <option value="4">4+ Stars</option>
+                <option value="3">3+ Stars</option>
+              </select>
+            </div>
+
+            <div id="responders-list" class="responders-list"></div>
+          </div>
+
+          <!-- Profile View -->
+          <div id="profile-view" class="view">
+            <div class="view-header">
+              <h1><i class="fas fa-user"></i> My Profile</h1>
+              <button class="btn-icon" id="logout-btn">
+                <i class="fas fa-sign-out-alt"></i>
+              </button>
+            </div>
+
+            <div id="profile-content"></div>
+          </div>
+
+          <!-- Admin View (conditional) -->
+          <div id="admin-view" class="view">
+            <div class="view-header">
+              <h1><i class="fas fa-shield-halved"></i> Admin Dashboard</h1>
+            </div>
+
+            <div class="admin-tabs">
+              <button class="admin-tab active" data-admin-tab="overview">Overview</button>
+              <button class="admin-tab" data-admin-tab="responders">Verify Responders</button>
+              <button class="admin-tab" data-admin-tab="payouts">Payouts</button>
+              <button class="admin-tab" data-admin-tab="stores">Manage Stores</button>
+            </div>
+
+            <div id="admin-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modals -->
+      <div id="modal-container"></div>
+
+      <!-- Toast Notifications -->
+      <div id="toast-container"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>
