@@ -7,10 +7,20 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const PASSCODE = '5309';
 const STORAGE_KEY_PROFILE = 'psr_profile';
 const STORAGE_KEY_AUTH = 'psr_authed';
+const STORAGE_KEY_ADMIN = 'psr_admin';
+
+const isAdminMode = () => sessionStorage.getItem(STORAGE_KEY_ADMIN) === '1';
 
 let currentUser = null;
 let currentProfile = null;
 let currentView = 'home';
+
+const escapeHtml = (str) => String(str)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -78,6 +88,7 @@ const showProfileSetupScreen = () => {
 const showMainApp = () => {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('main-app').classList.remove('hidden');
+  updateAdminButton();
 };
 
 const handlePasscodeSubmit = () => {
@@ -164,6 +175,7 @@ const setupEventListeners = () => {
   document.getElementById('browse-requests-btn')?.addEventListener('click', () => switchView('requests'));
   document.getElementById('become-responder-btn')?.addEventListener('click', () => showBecomeResponderModal());
   document.getElementById('logout-btn')?.addEventListener('click', handleLogout);
+  document.getElementById('admin-mode-btn')?.addEventListener('click', handleAdminButtonClick);
 
   setupFilters();
 };
@@ -196,10 +208,63 @@ const setupFilters = () => {
 
 const handleLogout = () => {
   sessionStorage.removeItem(STORAGE_KEY_AUTH);
+  sessionStorage.removeItem(STORAGE_KEY_ADMIN);
   currentUser = null;
   currentProfile = null;
   showPasscodeScreen();
   showToast('Logged out successfully', 'info');
+};
+
+const updateAdminButton = () => {
+  const btn = document.getElementById('admin-mode-btn');
+  if (!btn) return;
+  if (isAdminMode()) {
+    btn.classList.add('active');
+    btn.title = 'Disable Admin Mode';
+  } else {
+    btn.classList.remove('active');
+    btn.title = 'Enable Admin Mode';
+  }
+};
+
+const handleAdminButtonClick = () => {
+  if (isAdminMode()) {
+    sessionStorage.removeItem(STORAGE_KEY_ADMIN);
+    updateAdminButton();
+    showToast('Admin mode disabled', 'info');
+    refreshCurrentView();
+  } else {
+    showAdminPasskeyModal();
+  }
+};
+
+const showAdminPasskeyModal = () => {
+  createModal('Admin Access', `
+    <div class="form-group">
+      <label>Enter Admin Passkey</label>
+      <input type="password" id="admin-passkey-input" placeholder="Passkey" autocomplete="off" />
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-primary" onclick="submitAdminPasskey()">Unlock</button>
+    </div>
+  `);
+  const input = document.getElementById('admin-passkey-input');
+  input?.focus();
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') window.submitAdminPasskey();
+  });
+};
+
+const refreshCurrentView = () => {
+  switch (currentView) {
+    case 'home': loadHomeData(); break;
+    case 'requests': loadRequests(); break;
+    case 'stores': loadStores(); break;
+    case 'responders': loadResponders(); break;
+    case 'profile': loadProfile(); break;
+    case 'admin': loadAdminDashboard(); break;
+  }
 };
 
 const switchView = (viewName) => {
@@ -327,6 +392,14 @@ const renderRequests = (requests, containerId) => {
           `<button class="card-btn card-btn-whatsapp" onclick="event.stopPropagation(); openWhatsApp('${req.requester_id}')">
             <i class="fab fa-whatsapp"></i> Contact
           </button>` : ''}
+        ${isAdminMode() ? `
+          <button class="card-btn" onclick="event.stopPropagation(); adminEditRequest('${req.id}')">
+            <i class="fas fa-edit"></i> Edit
+          </button>
+          <button class="card-btn card-btn-danger" onclick="event.stopPropagation(); adminDeleteRequest('${req.id}')">
+            <i class="fas fa-trash"></i> Delete
+          </button>
+        ` : ''}
       </div>
     </div>
   `).join('');
@@ -461,11 +534,21 @@ const renderStores = (stores) => {
         </span>
       </div>
 
-      ${store.whatsapp_number ? `
+      ${store.whatsapp_number || isAdminMode() ? `
         <div class="card-actions">
-          <button class="card-btn card-btn-whatsapp" onclick="window.open('https://wa.me/${store.whatsapp_number}', '_blank')">
-            <i class="fab fa-whatsapp"></i> Contact Store
-          </button>
+          ${store.whatsapp_number ? `
+            <button class="card-btn card-btn-whatsapp" onclick="window.open('https://wa.me/${store.whatsapp_number}', '_blank')">
+              <i class="fab fa-whatsapp"></i> Contact Store
+            </button>
+          ` : ''}
+          ${isAdminMode() ? `
+            <button class="card-btn" onclick="event.stopPropagation(); adminEditStore('${store.id}')">
+              <i class="fas fa-edit"></i> Edit
+            </button>
+            <button class="card-btn card-btn-danger" onclick="event.stopPropagation(); adminDeleteStore('${store.id}')">
+              <i class="fas fa-trash"></i> Delete
+            </button>
+          ` : ''}
         </div>
       ` : ''}
     </div>
@@ -575,6 +658,14 @@ const renderResponders = (responders) => {
         <button class="card-btn card-btn-whatsapp" onclick="event.stopPropagation(); openWhatsApp('${resp.user_id}')">
           <i class="fab fa-whatsapp"></i> Contact
         </button>
+        ${isAdminMode() ? `
+          <button class="card-btn" onclick="event.stopPropagation(); adminToggleResponderVerification('${resp.id}', ${resp.verified})">
+            <i class="fas fa-${resp.verified ? 'user-slash' : 'user-check'}"></i> ${resp.verified ? 'Unverify' : 'Verify'}
+          </button>
+          <button class="card-btn card-btn-danger" onclick="event.stopPropagation(); adminDeleteResponder('${resp.id}')">
+            <i class="fas fa-trash"></i> Delete
+          </button>
+        ` : ''}
       </div>
     </div>
   `).join('');
@@ -928,47 +1019,141 @@ const createModal = (title, content) => {
   });
 };
 
-window.closeModal = () => {
+const closeModal = () => {
   document.getElementById('modal-container').classList.remove('active');
 };
 
-window.viewRequestDetails = (id) => {
-  console.log('View request:', id);
+// ── Admin action functions ────────────────────────────────────────────────────
+
+const adminDeleteRequest = async (id) => {
+  if (!confirm('Delete this request? This cannot be undone.')) return;
+  const { error } = await supabase.from('requests').delete().eq('id', id);
+  if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+  showToast('Request deleted', 'success');
+  if (currentView === 'home') loadHomeData(); else loadRequests();
 };
 
-window.viewResponderDetails = (id) => {
-  console.log('View responder:', id);
+const adminEditRequest = async (id) => {
+  const { data: req } = await supabase.from('requests').select('*').eq('id', id).maybeSingle();
+  if (!req) return;
+  createModal('Edit Request', `
+    <div class="form-group">
+      <label>Item Name *</label>
+      <input type="text" id="admin-req-item" value="${escapeHtml(req.item_name)}" />
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="admin-req-status">
+        <option value="open" ${req.status === 'open' ? 'selected' : ''}>Open</option>
+        <option value="claimed" ${req.status === 'claimed' ? 'selected' : ''}>Claimed</option>
+        <option value="at_terminal" ${req.status === 'at_terminal' ? 'selected' : ''}>At Terminal</option>
+        <option value="en_route" ${req.status === 'en_route' ? 'selected' : ''}>En Route</option>
+        <option value="arrived" ${req.status === 'arrived' ? 'selected' : ''}>Arrived</option>
+        <option value="completed" ${req.status === 'completed' ? 'selected' : ''}>Completed</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Urgency</label>
+      <select id="admin-req-urgency">
+        <option value="urgent" ${req.urgency === 'urgent' ? 'selected' : ''}>Urgent</option>
+        <option value="normal" ${req.urgency === 'normal' ? 'selected' : ''}>Normal</option>
+        <option value="flexible" ${req.urgency === 'flexible' ? 'selected' : ''}>Flexible</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-primary" onclick="adminSaveRequest('${id}')">Save</button>
+    </div>
+  `);
 };
 
-window.claimRequest = claimRequest;
-window.openWhatsApp = openWhatsApp;
-window.showBecomeResponderModal = showBecomeResponderModal;
-window.showPostRequestModal = showPostRequestModal;
-window.requestPayout = async () => {
-  const { data: responder } = await supabase
-    .from('responders')
-    .select('id, pending_earnings')
-    .eq('user_id', currentUser.id)
-    .maybeSingle();
-
-  if (responder && responder.pending_earnings > 0) {
-    const { error } = await supabase
-      .from('payouts')
-      .insert({
-        responder_id: responder.id,
-        amount: responder.pending_earnings,
-        gcash_number: currentProfile.whatsapp_number
-      });
-
-    if (error) {
-      showToast('Failed to request payout: ' + error.message, 'error');
-      return;
-    }
-
-    showToast('Payout requested successfully!', 'success');
-    loadProfile();
-  }
+const adminSaveRequest = async (id) => {
+  const item_name = document.getElementById('admin-req-item').value.trim();
+  const status = document.getElementById('admin-req-status').value;
+  const urgency = document.getElementById('admin-req-urgency').value;
+  if (!item_name) { showToast('Item name is required', 'error'); return; }
+  const { error } = await supabase.from('requests').update({ item_name, status, urgency }).eq('id', id);
+  if (error) { showToast('Update failed: ' + error.message, 'error'); return; }
+  closeModal();
+  showToast('Request updated', 'success');
+  if (currentView === 'home') loadHomeData(); else loadRequests();
 };
+
+const adminDeleteStore = async (id) => {
+  if (!confirm('Delete this store? This cannot be undone.')) return;
+  const { error } = await supabase.from('stores').delete().eq('id', id);
+  if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+  showToast('Store deleted', 'success');
+  loadStores();
+};
+
+const adminEditStore = async (id) => {
+  const { data: store } = await supabase.from('stores').select('*').eq('id', id).maybeSingle();
+  if (!store) return;
+  createModal('Edit Store', `
+    <div class="form-group">
+      <label>Name *</label>
+      <input type="text" id="admin-store-name" value="${escapeHtml(store.name)}" />
+    </div>
+    <div class="form-group">
+      <label>Address</label>
+      <input type="text" id="admin-store-address" value="${escapeHtml(store.address || '')}" />
+    </div>
+    <div class="form-group">
+      <label>Store Type</label>
+      <select id="admin-store-type">
+        <option value="mall" ${store.store_type === 'mall' ? 'selected' : ''}>Mall</option>
+        <option value="hardware" ${store.store_type === 'hardware' ? 'selected' : ''}>Hardware</option>
+        <option value="specialty" ${store.store_type === 'specialty' ? 'selected' : ''}>Specialty</option>
+        <option value="terminal" ${store.store_type === 'terminal' ? 'selected' : ''}>Terminal</option>
+        <option value="grocery" ${store.store_type === 'grocery' ? 'selected' : ''}>Grocery</option>
+        <option value="pharmacy" ${store.store_type === 'pharmacy' ? 'selected' : ''}>Pharmacy</option>
+        <option value="bank" ${store.store_type === 'bank' ? 'selected' : ''}>Bank</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Featured</label>
+      <select id="admin-store-featured">
+        <option value="false" ${!store.featured ? 'selected' : ''}>No</option>
+        <option value="true" ${store.featured ? 'selected' : ''}>Yes</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-primary" onclick="adminSaveStore('${id}')">Save</button>
+    </div>
+  `);
+};
+
+const adminSaveStore = async (id) => {
+  const name = document.getElementById('admin-store-name').value.trim();
+  const address = document.getElementById('admin-store-address').value.trim();
+  const store_type = document.getElementById('admin-store-type').value;
+  const featured = document.getElementById('admin-store-featured').value === 'true';
+  if (!name) { showToast('Store name is required', 'error'); return; }
+  const { error } = await supabase.from('stores').update({ name, address, store_type, featured }).eq('id', id);
+  if (error) { showToast('Update failed: ' + error.message, 'error'); return; }
+  closeModal();
+  showToast('Store updated', 'success');
+  loadStores();
+};
+
+const adminDeleteResponder = async (id) => {
+  if (!confirm('Delete this responder? This cannot be undone.')) return;
+  const { error } = await supabase.from('responders').delete().eq('id', id);
+  if (error) { showToast('Delete failed: ' + error.message, 'error'); return; }
+  showToast('Responder deleted', 'success');
+  loadResponders();
+};
+
+const adminToggleResponderVerification = async (id, verified) => {
+  const { error } = await supabase.from('responders').update({ verified: !verified }).eq('id', id);
+  if (error) { showToast('Update failed: ' + error.message, 'error'); return; }
+  showToast(verified ? 'Responder unverified' : 'Responder verified', 'success');
+  loadResponders();
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const showToast = (message, type = 'info') => {
   const container = document.getElementById('toast-container');
@@ -993,19 +1178,19 @@ const showToast = (message, type = 'info') => {
   }, 3000);
 };
 
-window.showEditProfileModal = () => {
+const showEditProfileModal = () => {
   createModal('Edit Profile', `
     <div class="form-group">
       <label>Name *</label>
-      <input type="text" id="edit-name" value="${currentProfile.full_name}" required />
+      <input type="text" id="edit-name" value="${escapeHtml(currentProfile.full_name)}" required />
     </div>
     <div class="form-group">
       <label>WhatsApp *</label>
-      <input type="tel" id="edit-whatsapp" value="${currentProfile.whatsapp_number}" pattern="639[0-9]{9}" required />
+      <input type="tel" id="edit-whatsapp" value="${escapeHtml(currentProfile.whatsapp_number)}" pattern="639[0-9]{9}" required />
     </div>
     <div class="form-group">
       <label>Barangay</label>
-      <input type="text" id="edit-barangay" value="${currentProfile.location_barangay}" />
+      <input type="text" id="edit-barangay" value="${escapeHtml(currentProfile.location_barangay)}" />
     </div>
     <div class="form-actions">
       <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
@@ -1014,7 +1199,7 @@ window.showEditProfileModal = () => {
   `);
 };
 
-window.saveEditProfile = () => {
+const saveEditProfile = () => {
   const name = document.getElementById('edit-name').value.trim();
   const whatsapp = document.getElementById('edit-whatsapp').value.trim();
   const barangay = document.getElementById('edit-barangay').value.trim();
@@ -1044,5 +1229,64 @@ window.saveEditProfile = () => {
   showToast('Profile updated!', 'success');
   loadProfile();
 };
+
+// ── Expose functions used in inline HTML handlers ──────────────────────────
+window.closeModal = closeModal;
+window.claimRequest = claimRequest;
+window.openWhatsApp = openWhatsApp;
+window.showBecomeResponderModal = showBecomeResponderModal;
+window.showPostRequestModal = showPostRequestModal;
+window.showEditProfileModal = showEditProfileModal;
+window.saveEditProfile = saveEditProfile;
+window.viewRequestDetails = (id) => { console.log('View request:', id); };
+window.viewResponderDetails = (id) => { console.log('View responder:', id); };
+window.submitAdminPasskey = () => {
+  const passkey = document.getElementById('admin-passkey-input')?.value;
+  if (passkey === PASSCODE) {
+    sessionStorage.setItem(STORAGE_KEY_ADMIN, '1');
+    closeModal();
+    updateAdminButton();
+    showToast('Admin mode enabled', 'success');
+    refreshCurrentView();
+  } else {
+    showToast('Incorrect passkey', 'error');
+    const input = document.getElementById('admin-passkey-input');
+    if (input) input.value = '';
+  }
+};
+window.adminEditRequest = adminEditRequest;
+window.adminSaveRequest = adminSaveRequest;
+window.adminDeleteRequest = adminDeleteRequest;
+window.adminEditStore = adminEditStore;
+window.adminSaveStore = adminSaveStore;
+window.adminDeleteStore = adminDeleteStore;
+window.adminDeleteResponder = adminDeleteResponder;
+window.adminToggleResponderVerification = adminToggleResponderVerification;
+window.requestPayout = async () => {
+  const { data: responder } = await supabase
+    .from('responders')
+    .select('id, pending_earnings')
+    .eq('user_id', currentUser.id)
+    .maybeSingle();
+
+  if (responder && responder.pending_earnings > 0) {
+    const { error } = await supabase
+      .from('payouts')
+      .insert({
+        responder_id: responder.id,
+        amount: responder.pending_earnings,
+        gcash_number: currentProfile.whatsapp_number
+      });
+
+    if (error) {
+      showToast('Failed to request payout: ' + error.message, 'error');
+      return;
+    }
+
+    showToast('Payout requested successfully!', 'success');
+    loadProfile();
+  }
+};
+// ───────────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', init);
