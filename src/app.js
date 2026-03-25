@@ -7,6 +7,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const PASSCODE = '5309';
 const STORAGE_KEY_PROFILE = 'psr_profile';
 const STORAGE_KEY_AUTH = 'psr_authed';
+const STORE_TYPES = ['mall', 'hardware', 'specialty', 'terminal', 'grocery', 'pharmacy', 'bank'];
 
 let currentUser = null;
 let currentProfile = null;
@@ -156,6 +157,11 @@ const setupEventListeners = () => {
     if (navItem) {
       const view = navItem.dataset.view;
       switchView(view);
+    }
+
+    const adminTab = e.target.closest('.admin-tab');
+    if (adminTab) {
+      loadAdminDashboard(adminTab.dataset.adminTab);
     }
   });
 
@@ -692,14 +698,458 @@ const loadProfile = async () => {
   `;
 };
 
-const loadAdminDashboard = () => {
+let currentAdminTab = 'overview';
+
+const loadAdminDashboard = (tab = currentAdminTab) => {
+  currentAdminTab = tab;
+  document.querySelectorAll('.admin-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.adminTab === tab);
+  });
   const container = document.getElementById('admin-content');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary);"><i class="fas fa-spinner fa-spin" style="font-size:32px;"></i></div>';
+  switch (tab) {
+    case 'overview': loadAdminOverview(); break;
+    case 'responders': loadAdminResponders(); break;
+    case 'payouts': loadAdminPayouts(); break;
+    case 'stores': loadAdminStores(); break;
+  }
+};
+
+const loadAdminOverview = async () => {
+  const container = document.getElementById('admin-content');
+  const [totalRequests, activeStores, totalResponders, pendingPayouts] = await Promise.all([
+    supabase.from('requests').select('id', { count: 'exact', head: true }),
+    supabase.from('stores').select('id', { count: 'exact', head: true }),
+    supabase.from('responders').select('id', { count: 'exact', head: true }).eq('verified', true),
+    supabase.from('payouts').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+  ]);
+
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  const { data: recentRequests } = await supabase
+    .from('requests')
+    .select('created_at')
+    .gte('created_at', sevenDaysAgo.toISOString());
+
   container.innerHTML = `
-    <div class="empty-state">
-      <i class="fas fa-shield-halved"></i>
-      <p>Admin dashboard coming soon...</p>
+    <div class="admin-stats-grid">
+      <div class="admin-stat-card">
+        <i class="fas fa-box" style="color:var(--accent-blue);"></i>
+        <div><h3>${totalRequests.count || 0}</h3><p>Total Requests</p></div>
+      </div>
+      <div class="admin-stat-card">
+        <i class="fas fa-store" style="color:var(--accent-green);"></i>
+        <div><h3>${activeStores.count || 0}</h3><p>Active Stores</p></div>
+      </div>
+      <div class="admin-stat-card">
+        <i class="fas fa-truck" style="color:var(--accent-purple);"></i>
+        <div><h3>${totalResponders.count || 0}</h3><p>Verified Responders</p></div>
+      </div>
+      <div class="admin-stat-card">
+        <i class="fas fa-money-bill-wave" style="color:var(--accent-orange);"></i>
+        <div><h3>${pendingPayouts.count || 0}</h3><p>Pending Payouts</p></div>
+      </div>
+    </div>
+    <div class="admin-chart-card">
+      <h3><i class="fas fa-chart-bar"></i> Requests (Last 7 Days)</h3>
+      <canvas id="requests-chart" height="120"></canvas>
     </div>
   `;
+
+  const days = [];
+  const dayCounts = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+    const dateStr = d.toISOString().split('T')[0];
+    dayCounts.push((recentRequests || []).filter(r => r.created_at.startsWith(dateStr)).length);
+  }
+
+  new Chart(document.getElementById('requests-chart'), {
+    type: 'bar',
+    data: {
+      labels: days,
+      datasets: [{
+        label: 'Requests',
+        data: dayCounts,
+        backgroundColor: 'rgba(0, 212, 255, 0.4)',
+        borderColor: '#00d4ff',
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#a8a8b3', font: { size: 12 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#a8a8b3', font: { size: 12 }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+      }
+    }
+  });
+};
+
+const loadAdminResponders = async () => {
+  const container = document.getElementById('admin-content');
+  const { data: pending } = await supabase
+    .from('responders')
+    .select('*, profile:profiles(full_name, whatsapp_number, gcash_number)')
+    .eq('verified', false)
+    .is('rejection_reason', null)
+    .order('created_at', { ascending: false });
+
+  if (!pending || pending.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <i class="fas fa-user-check"></i>
+        <p>No pending responder applications</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = pending.map(resp => `
+    <div class="admin-card" id="resp-card-${resp.id}">
+      <div class="admin-card-header">
+        <div>
+          <h3>${resp.profile?.full_name || 'Unknown'}</h3>
+          <p><i class="fab fa-whatsapp"></i> ${resp.profile?.whatsapp_number || 'N/A'}</p>
+        </div>
+        <span class="badge badge-urgent">Pending</span>
+      </div>
+      <div class="admin-card-details">
+        <div class="info-row">
+          <span class="info-label">Vehicle</span>
+          <span class="info-value"><i class="fas ${getVehicleIcon(resp.vehicle_type)}"></i> ${formatStoreType(resp.vehicle_type)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">GCash</span>
+          <span class="info-value">${resp.profile?.gcash_number || 'Not set'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Areas</span>
+          <span class="info-value">${(resp.service_areas || []).join(', ') || 'N/A'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Availability</span>
+          <span class="info-value">${resp.availability || 'N/A'}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Applied</span>
+          <span class="info-value">${new Date(resp.created_at).toLocaleDateString()}</span>
+        </div>
+      </div>
+      ${resp.drivers_license || resp.vehicle_photo || resp.or_cr_photo ? `
+        <div class="admin-docs">
+          ${resp.drivers_license ? `<a href="${resp.drivers_license}" target="_blank" class="doc-link"><i class="fas fa-id-card"></i> License</a>` : ''}
+          ${resp.vehicle_photo ? `<a href="${resp.vehicle_photo}" target="_blank" class="doc-link"><i class="fas fa-car"></i> Vehicle</a>` : ''}
+          ${resp.or_cr_photo ? `<a href="${resp.or_cr_photo}" target="_blank" class="doc-link"><i class="fas fa-file-alt"></i> OR/CR</a>` : ''}
+        </div>
+      ` : ''}
+      <div class="admin-card-actions">
+        <button class="btn-approve" onclick="approveResponder('${resp.id}')">
+          <i class="fas fa-check"></i> Approve
+        </button>
+        <button class="btn-reject" onclick="showRejectResponderModal('${resp.id}')">
+          <i class="fas fa-times"></i> Reject
+        </button>
+      </div>
+    </div>
+  `).join('');
+};
+
+const loadAdminPayouts = async () => {
+  const container = document.getElementById('admin-content');
+  const [{ data: pending }, { data: history }] = await Promise.all([
+    supabase.from('payouts')
+      .select('*, responder:responders(id, profile:profiles(full_name))')
+      .eq('status', 'pending')
+      .order('requested_at', { ascending: false }),
+    supabase.from('payouts')
+      .select('*, responder:responders(id, profile:profiles(full_name))')
+      .eq('status', 'paid')
+      .order('processed_at', { ascending: false })
+      .limit(10)
+  ]);
+
+  const pendingHtml = (!pending || pending.length === 0)
+    ? `<div class="empty-state" style="padding:30px 20px;"><i class="fas fa-check-circle" style="font-size:40px;"></i><p>No pending payouts</p></div>`
+    : pending.map(payout => `
+      <div class="admin-card" id="payout-card-${payout.id}">
+        <div class="admin-card-header">
+          <div>
+            <h3>${payout.responder?.profile?.full_name || 'Unknown'}</h3>
+            <p>GCash: ${payout.gcash_number}</p>
+          </div>
+          <div class="payout-amount">₱${parseFloat(payout.amount).toFixed(2)}</div>
+        </div>
+        <div class="admin-card-details">
+          <div class="info-row">
+            <span class="info-label">Requested</span>
+            <span class="info-value">${new Date(payout.requested_at).toLocaleDateString()}</span>
+          </div>
+        </div>
+        <div class="admin-card-actions" style="flex-direction:column;gap:8px;">
+          <input type="text" id="ref-${payout.id}" placeholder="Reference number (required)"
+            style="width:100%;padding:10px 12px;background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-md);color:var(--text-primary);font-size:13px;outline:none;" />
+          <button class="btn-approve" onclick="markPayoutPaid('${payout.id}')">
+            <i class="fas fa-money-bill-wave"></i> Mark as Paid
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+  const historyHtml = (!history || history.length === 0)
+    ? '<p style="color:var(--text-secondary);font-size:13px;text-align:center;padding:16px;">No payout history yet</p>'
+    : history.map(p => `
+      <div class="admin-card" style="border-color:rgba(0,255,136,0.2);">
+        <div class="admin-card-header">
+          <div>
+            <h3>${p.responder?.profile?.full_name || 'Unknown'}</h3>
+            <p>GCash: ${p.gcash_number} &bull; Ref: ${p.admin_notes || 'N/A'}</p>
+          </div>
+          <div class="payout-amount" style="color:var(--accent-green);">₱${parseFloat(p.amount).toFixed(2)}</div>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Paid</span>
+          <span class="info-value">${p.processed_at ? new Date(p.processed_at).toLocaleDateString() : 'N/A'}</span>
+        </div>
+      </div>
+    `).join('');
+
+  container.innerHTML = `
+    <h3 style="font-size:15px;font-weight:500;margin-bottom:12px;"><i class="fas fa-clock"></i> Pending Payouts</h3>
+    ${pendingHtml}
+    <h3 style="font-size:15px;font-weight:500;margin:20px 0 12px;"><i class="fas fa-history"></i> Payout History</h3>
+    ${historyHtml}
+  `;
+};
+
+const loadAdminStores = async () => {
+  const container = document.getElementById('admin-content');
+  const { data: stores } = await supabase
+    .from('stores')
+    .select('*')
+    .order('name', { ascending: true });
+
+  const storeHtml = (!stores || stores.length === 0)
+    ? `<div class="empty-state"><i class="fas fa-store"></i><p>No stores yet</p></div>`
+    : stores.map(store => `
+      <div class="admin-card" id="store-card-${store.id}">
+        <div class="admin-card-header">
+          <div>
+            <h3>${store.name}</h3>
+            <p>${store.address}</p>
+          </div>
+          <div class="card-badges">
+            ${store.featured ? '<span class="badge badge-featured"><i class="fas fa-star"></i> Featured</span>' : ''}
+            <span class="badge badge-status">${formatStoreType(store.store_type)}</span>
+          </div>
+        </div>
+        <div class="admin-card-details">
+          ${store.contact_name ? `<div class="info-row"><span class="info-label">Contact</span><span class="info-value">${store.contact_name}</span></div>` : ''}
+          ${store.whatsapp_number ? `<div class="info-row"><span class="info-label">WhatsApp</span><span class="info-value">${store.whatsapp_number}</span></div>` : ''}
+          ${store.email ? `<div class="info-row"><span class="info-label">Email</span><span class="info-value">${store.email}</span></div>` : ''}
+        </div>
+        <div class="admin-card-actions">
+          <button class="card-btn" onclick="adminToggleFeatured('${store.id}', ${store.featured})">
+            <i class="fas fa-star"></i> ${store.featured ? 'Unfeature' : 'Feature'}
+          </button>
+          <button class="card-btn" onclick="showEditStoreModal('${store.id}')">
+            <i class="fas fa-edit"></i> Edit
+          </button>
+          <button class="card-btn" style="color:var(--accent-red);" onclick="confirmDeleteStore('${store.id}')">
+            <i class="fas fa-trash"></i> Delete
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+  container.innerHTML = `
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <button class="btn-primary" onclick="showAddStoreModal()" style="flex:1;min-width:140px;">
+        <i class="fas fa-plus"></i> Add Store
+      </button>
+      <button class="btn-secondary" onclick="showBulkImportModal()" style="flex:1;min-width:140px;">
+        <i class="fas fa-upload"></i> Bulk Import
+      </button>
+    </div>
+    ${storeHtml}
+  `;
+};
+
+const approveResponder = async (responderId) => {
+  const { error } = await supabase
+    .from('responders')
+    .update({ verified: true, verified_at: new Date().toISOString() })
+    .eq('id', responderId);
+  if (error) { showToast('Failed to approve: ' + error.message, 'error'); return; }
+  document.getElementById(`resp-card-${responderId}`)?.remove();
+  showToast('Responder approved!', 'success');
+};
+
+const showRejectResponderModal = (responderId) => {
+  const name = document.getElementById(`resp-card-${responderId}`)?.querySelector('h3')?.textContent || 'Applicant';
+  createModal('Reject Application', `
+    <p style="color:var(--text-secondary);margin-bottom:16px;">Rejecting application for <strong style="color:var(--text-primary);">${name}</strong></p>
+    <div class="form-group">
+      <label>Reason for rejection</label>
+      <textarea id="reject-reason" placeholder="Optional reason..." style="min-height:80px;"></textarea>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-reject" style="flex:1;" onclick="rejectResponder('${responderId}')">Reject</button>
+    </div>
+  `);
+};
+
+const rejectResponder = async (responderId) => {
+  const reason = document.getElementById('reject-reason')?.value.trim() || 'Application rejected';
+  const { error } = await supabase
+    .from('responders')
+    .update({ rejection_reason: reason })
+    .eq('id', responderId);
+  if (error) { showToast('Failed to reject: ' + error.message, 'error'); return; }
+  closeModal();
+  document.getElementById(`resp-card-${responderId}`)?.remove();
+  showToast('Application rejected.', 'info');
+};
+
+const markPayoutPaid = async (payoutId) => {
+  const refInput = document.getElementById(`ref-${payoutId}`);
+  const ref = refInput?.value.trim();
+  if (!ref) { showToast('Please enter a reference number', 'error'); refInput?.focus(); return; }
+  const { error } = await supabase
+    .from('payouts')
+    .update({ status: 'paid', admin_notes: ref, processed_at: new Date().toISOString() })
+    .eq('id', payoutId);
+  if (error) { showToast('Failed to update payout: ' + error.message, 'error'); return; }
+  document.getElementById(`payout-card-${payoutId}`)?.remove();
+  showToast('Payout marked as paid!', 'success');
+};
+
+const adminToggleFeatured = async (storeId, currentFeatured) => {
+  const { error } = await supabase
+    .from('stores')
+    .update({ featured: !currentFeatured })
+    .eq('id', storeId);
+  if (error) { showToast('Failed to update: ' + error.message, 'error'); return; }
+  showToast(currentFeatured ? 'Store unfeatured' : 'Store featured!', 'success');
+  loadAdminDashboard('stores');
+};
+
+const buildStoreForm = (store = {}) => `
+  <form id="store-form">
+    <div class="form-group">
+      <label>Store Name *</label>
+      <input type="text" id="sf-name" value="${store.name || ''}" required />
+    </div>
+    <div class="form-group">
+      <label>Address *</label>
+      <input type="text" id="sf-address" value="${store.address || ''}" required />
+    </div>
+    <div class="form-group">
+      <label>Store Type *</label>
+      <select id="sf-type" required>
+        <option value="">Select type...</option>
+        ${STORE_TYPES.map(t =>
+          `<option value="${t}" ${store.store_type === t ? 'selected' : ''}>${t.charAt(0).toUpperCase() + t.slice(1)}</option>`
+        ).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Latitude</label>
+      <input type="number" id="sf-lat" step="any" value="${store.latitude || ''}" placeholder="e.g. 9.7390" />
+    </div>
+    <div class="form-group">
+      <label>Longitude</label>
+      <input type="number" id="sf-lng" step="any" value="${store.longitude || ''}" placeholder="e.g. 118.7362" />
+    </div>
+    <div class="form-group">
+      <label>Contact Name</label>
+      <input type="text" id="sf-contact" value="${store.contact_name || ''}" />
+    </div>
+    <div class="form-group">
+      <label>WhatsApp Number</label>
+      <input type="text" id="sf-whatsapp" value="${store.whatsapp_number || ''}" placeholder="639XXXXXXXXX" />
+    </div>
+    <div class="form-group">
+      <label>Website</label>
+      <input type="url" id="sf-website" value="${store.website || ''}" placeholder="https://..." />
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="sf-email" value="${store.email || ''}" />
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="submit" class="btn-primary">Save Store</button>
+    </div>
+  </form>
+`;
+
+const collectStoreFormData = () => {
+  const latVal = document.getElementById('sf-lat').value;
+  const lngVal = document.getElementById('sf-lng').value;
+  return {
+    name: document.getElementById('sf-name').value.trim(),
+    address: document.getElementById('sf-address').value.trim(),
+    store_type: document.getElementById('sf-type').value,
+    latitude: latVal !== '' ? parseFloat(latVal) : null,
+    longitude: lngVal !== '' ? parseFloat(lngVal) : null,
+    contact_name: document.getElementById('sf-contact').value.trim() || null,
+    whatsapp_number: document.getElementById('sf-whatsapp').value.trim() || null,
+    website: document.getElementById('sf-website').value.trim() || null,
+    email: document.getElementById('sf-email').value.trim() || null
+  };
+};
+
+const showAddStoreModal = () => {
+  createModal('Add New Store', buildStoreForm());
+  document.getElementById('store-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const storeData = collectStoreFormData();
+    const { error } = await supabase.from('stores').insert(storeData);
+    if (error) { showToast('Failed to add store: ' + error.message, 'error'); return; }
+    closeModal();
+    showToast('Store added!', 'success');
+    loadAdminDashboard('stores');
+  });
+};
+
+const showEditStoreModal = async (storeId) => {
+  const { data: store, error: fetchError } = await supabase.from('stores').select('*').eq('id', storeId).maybeSingle();
+  if (fetchError || !store) { showToast('Store not found', 'error'); return; }
+  createModal('Edit Store', buildStoreForm(store));
+  document.getElementById('store-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const storeData = collectStoreFormData();
+    const { error } = await supabase.from('stores').update(storeData).eq('id', storeId);
+    if (error) { showToast('Failed to update store: ' + error.message, 'error'); return; }
+    closeModal();
+    showToast('Store updated!', 'success');
+    loadAdminDashboard('stores');
+  });
+};
+
+const confirmDeleteStore = (storeId) => {
+  const storeName = document.getElementById(`store-card-${storeId}`)?.querySelector('h3')?.textContent || 'this store';
+  createModal('Delete Store', `
+    <p style="color:var(--text-secondary);margin-bottom:20px;">Are you sure you want to delete <strong style="color:var(--text-primary);">${storeName}</strong>? This cannot be undone.</p>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-reject" style="flex:1;" onclick="deleteStore('${storeId}')">Delete</button>
+    </div>
+  `);
+};
+
+const deleteStore = async (storeId) => {
+  const { error } = await supabase.from('stores').delete().eq('id', storeId);
+  if (error) { showToast('Failed to delete: ' + error.message, 'error'); return; }
+  closeModal();
+  showToast('Store deleted.', 'info');
+  loadAdminDashboard('stores');
 };
 
 const showPostRequestModal = () => {
@@ -1051,6 +1501,16 @@ window.openWhatsApp = openWhatsApp;
 window.showBecomeResponderModal = showBecomeResponderModal;
 window.showPostRequestModal = showPostRequestModal;
 window.showBulkImportModal = showBulkImportModal;
+window.processBulkImport = processBulkImport;
+window.approveResponder = approveResponder;
+window.showRejectResponderModal = showRejectResponderModal;
+window.rejectResponder = rejectResponder;
+window.markPayoutPaid = markPayoutPaid;
+window.adminToggleFeatured = adminToggleFeatured;
+window.showAddStoreModal = showAddStoreModal;
+window.showEditStoreModal = showEditStoreModal;
+window.confirmDeleteStore = confirmDeleteStore;
+window.deleteStore = deleteStore;
 window.requestPayout = async () => {
   const { data: responder } = await supabase
     .from('responders')
