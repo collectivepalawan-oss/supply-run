@@ -11,6 +11,7 @@ const STORAGE_KEY_AUTH = 'psr_authed';
 let currentUser = null;
 let currentProfile = null;
 let currentView = 'home';
+let adminMode = false;
 
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -155,6 +156,14 @@ const setupEventListeners = () => {
     const navItem = e.target.closest('.nav-item');
     if (navItem) {
       const view = navItem.dataset.view;
+      if (view === 'admin') {
+        if (adminMode) {
+          switchView('admin');
+        } else {
+          showAdminPasskeyModal();
+        }
+        return;
+      }
       switchView(view);
     }
   });
@@ -901,6 +910,34 @@ const openWhatsApp = async (userId) => {
     window.open(`https://wa.me/${profile.whatsapp_number}`, '_blank');
   } else {
     showToast('WhatsApp number not available', 'error');
+  }
+};
+
+const showAdminPasskeyModal = () => {
+  createModal('Admin Access', `
+    <div class="form-group">
+      <label>Enter Admin Passkey</label>
+      <input type="password" id="admin-passkey-input" placeholder="Passkey" maxlength="10" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter') verifyAdminPasskey()" />
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-primary" onclick="verifyAdminPasskey()">
+        <i class="fas fa-unlock-alt"></i> Unlock
+      </button>
+    </div>
+  `);
+  setTimeout(() => document.getElementById('admin-passkey-input')?.focus(), 100);
+};
+
+window.verifyAdminPasskey = () => {
+  const input = (document.getElementById('admin-passkey-input')?.value ?? '').trim();
+  if (input === PASSCODE) {
+    adminMode = true;
+    closeModal();
+    showToast('Admin mode enabled', 'success');
+    switchView('admin');
+  } else {
+    showToast('Invalid passkey', 'error');
   }
 };
 
