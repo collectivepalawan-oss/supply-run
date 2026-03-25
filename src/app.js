@@ -446,7 +446,7 @@ const renderStores = (stores) => {
   }
 
   container.innerHTML = stores.map(store => `
-    <div class="store-card">
+    <div class="store-card" onclick="viewStoreDetails('${store.id}')">
       <div class="card-header">
         <div class="card-title">
           <h3>${store.name}</h3>
@@ -461,13 +461,23 @@ const renderStores = (stores) => {
         </span>
       </div>
 
-      ${store.whatsapp_number ? `
-        <div class="card-actions">
-          <button class="card-btn card-btn-whatsapp" onclick="window.open('https://wa.me/${store.whatsapp_number}', '_blank')">
-            <i class="fab fa-whatsapp"></i> Contact Store
+      <div class="card-actions" style="margin-top: 12px;">
+        ${store.whatsapp_number ? `
+          <button class="card-btn card-btn-whatsapp" onclick="event.stopPropagation(); window.open('https://wa.me/${store.whatsapp_number}', '_blank')">
+            <i class="fab fa-whatsapp"></i> WhatsApp
           </button>
-        </div>
-      ` : ''}
+        ` : ''}
+        ${store.website ? `
+          <button class="card-btn" onclick="event.stopPropagation(); window.open('${store.website}', '_blank')">
+            <i class="fas fa-globe"></i> Website
+          </button>
+        ` : ''}
+        ${store.email ? `
+          <button class="card-btn" onclick="event.stopPropagation(); window.location.href='mailto:${store.email}'">
+            <i class="fas fa-envelope"></i> Email
+          </button>
+        ` : ''}
+      </div>
     </div>
   `).join('');
 };
@@ -940,10 +950,107 @@ window.viewResponderDetails = (id) => {
   console.log('View responder:', id);
 };
 
+window.viewStoreDetails = (id) => {
+  console.log('View store:', id);
+};
+
+const showBulkImportModal = () => {
+  createModal('Bulk Import Stores', `
+    <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+      Paste CSV data (tab or comma separated). Required columns: name, address, store_type, latitude, longitude
+    </p>
+    <p style="color: var(--text-secondary); font-size: 12px; margin-bottom: 16px;">
+      Optional columns: contact_name, whatsapp_number, facebook_messenger, website, email
+    </p>
+    <textarea id="bulk-csv" placeholder="name&#9;address&#9;store_type&#9;latitude&#9;longitude&#9;contact_name&#9;whatsapp_number&#9;website&#9;email" style="width: 100%; height: 150px; margin-bottom: 16px; padding: 12px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-primary); font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
+    <div class="form-actions">
+      <button type="button" class="btn-secondary" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-primary" onclick="processBulkImport()">Import</button>
+    </div>
+  `);
+};
+
+const processBulkImport = async () => {
+  const csvData = document.getElementById('bulk-csv').value.trim();
+  if (!csvData) {
+    showToast('Please paste CSV data', 'error');
+    return;
+  }
+
+  const lines = csvData.split('\n').map(line => line.trim()).filter(line => line);
+  if (lines.length < 2) {
+    showToast('Need at least 1 data row (plus header)', 'error');
+    return;
+  }
+
+  const headers = lines[0].split(/[\t,]/).map(h => h.trim().toLowerCase());
+  const requiredFields = ['name', 'address', 'store_type', 'latitude', 'longitude'];
+
+  const missingFields = requiredFields.filter(f => !headers.includes(f));
+  if (missingFields.length > 0) {
+    showToast('Missing required fields: ' + missingFields.join(', '), 'error');
+    return;
+  }
+
+  const stores = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(/[\t,]/).map(v => v.trim());
+    const store = {};
+
+    headers.forEach((header, idx) => {
+      store[header] = values[idx] || null;
+    });
+
+    if (!store.name || !store.store_type) continue;
+
+    const lat = parseFloat(store.latitude);
+    const lng = parseFloat(store.longitude);
+
+    if (isNaN(lat) || isNaN(lng)) continue;
+
+    stores.push({
+      name: store.name,
+      address: store.address,
+      store_type: store.store_type.toLowerCase(),
+      latitude: lat,
+      longitude: lng,
+      contact_name: store.contact_name || null,
+      whatsapp_number: store.whatsapp_number || null,
+      facebook_messenger: store.facebook_messenger || null,
+      website: store.website || null,
+      email: store.email || null,
+      featured: false
+    });
+  }
+
+  if (stores.length === 0) {
+    showToast('No valid stores found in CSV', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await supabase
+      .from('stores')
+      .insert(stores);
+
+    if (error) {
+      showToast('Import failed: ' + error.message, 'error');
+      return;
+    }
+
+    closeModal();
+    showToast(`Successfully imported ${stores.length} stores!`, 'success');
+    loadStores();
+  } catch (err) {
+    showToast('Import error: ' + err.message, 'error');
+  }
+};
+
 window.claimRequest = claimRequest;
 window.openWhatsApp = openWhatsApp;
 window.showBecomeResponderModal = showBecomeResponderModal;
 window.showPostRequestModal = showPostRequestModal;
+window.showBulkImportModal = showBulkImportModal;
 window.requestPayout = async () => {
   const { data: responder } = await supabase
     .from('responders')
